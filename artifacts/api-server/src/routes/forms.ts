@@ -88,7 +88,7 @@ router.post("/contact", async (req: Request, res: Response) => {
     logger.error({ error: sendResult.error }, "Failed to deliver contact form email");
     return res.status(500).json({
       success: false,
-      error: "حدث خطأ أثناء معالجة الطلب في الخادم. يرجى المحاولة مرة أخرى.",
+      error: sendResult.error || "حدث خطأ أثناء معالجة الطلب في الخادم.",
     });
   }
 
@@ -143,7 +143,7 @@ router.post("/service-request", async (req: Request, res: Response) => {
     logger.error({ error: sendResult.error }, "Failed to deliver service request email");
     return res.status(500).json({
       success: false,
-      error: "حدث خطأ أثناء معالجة الطلب في الخادم. يرجى المحاولة مرة أخرى.",
+      error: sendResult.error || "حدث خطأ أثناء معالجة الطلب في الخادم.",
     });
   }
 

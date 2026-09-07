@@ -30,12 +30,27 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+import { testSMTPConnection, printSMTPRuntimeConfig } from "./lib/mailer";
+
+// Print runtime config at startup
+printSMTPRuntimeConfig();
+
 app.get("/", (_req, res) => {
   res.json({ status: "ok", name: "OV Office API Server" });
 });
 
 app.get("/api/healthz", (_req, res) => {
   res.json({ status: "ok" });
+});
+
+// Diagnostic endpoint to test SMTP live
+app.get("/api/smtp-test", async (_req, res) => {
+  try {
+    const result = await testSMTPConnection();
+    res.status(result.success ? 200 : 500).json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message });
+  }
 });
 
 app.use("/api", (req, _res, next) => {

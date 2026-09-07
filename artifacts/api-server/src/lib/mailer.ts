@@ -33,42 +33,150 @@ export interface ServiceRequestFormData {
   userAgent?: string;
 }
 
-let transporter: Transporter | null = null;
+export interface SMTPRuntimeConfig {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  pass?: string;
+  fromEmail: string;
+  sessionSecretSet: boolean;
+}
 
-export function getTransporter(): Transporter {
-  if (transporter) return transporter;
+export function getSMTPConfig(): SMTPRuntimeConfig {
+  const host = (process.env.SMTP_HOST || "smtp.gmail.com").trim();
+  const rawPort = process.env.SMTP_PORT?.trim();
+  const port = rawPort ? parseInt(rawPort, 10) : 465;
 
-  const host = process.env.SMTP_HOST || "smtp.gmail.com";
-  const port = Number(process.env.SMTP_PORT) || 465;
-  const user = process.env.SMTP_USER || "ovoffiice@gmail.com";
-  const pass = process.env.SMTP_PASS;
-  const secure = process.env.SMTP_SECURE === "true" || port === 465;
+  const rawSecure = process.env.SMTP_SECURE?.trim().toLowerCase();
+  // Strictly convert string "true" / "false" to boolean
+  let secure = port === 465;
+  if (rawSecure !== undefined && rawSecure !== "") {
+    secure = rawSecure === "true" || rawSecure === "1" || rawSecure === "yes";
+  }
 
-  if (user && pass) {
-    transporter = nodemailer.createTransport({
-      host,
+  const user = (process.env.SMTP_USER || "ovoffiice@gmail.com").trim();
+  const pass = process.env.SMTP_PASS?.trim();
+  const fromEmail = (process.env.FROM_EMAIL || user || OFFICIAL_RECIPIENT_EMAIL).trim();
+  const sessionSecretSet = Boolean(process.env.SESSION_SECRET?.trim());
+
+  return { host, port, secure, user, pass, fromEmail, sessionSecretSet };
+}
+
+export function printSMTPRuntimeConfig(): SMTPRuntimeConfig {
+  const config = getSMTPConfig();
+  console.log("[SMTP RUNTIME CONFIG]", {
+    SMTP_HOST: config.host,
+    SMTP_PORT: config.port,
+    SMTP_PORT_TYPE: typeof config.port,
+    SMTP_SECURE: config.secure,
+    SMTP_SECURE_TYPE: typeof config.secure,
+    SMTP_USER: config.user,
+    SMTP_PASS_CONFIGURED: Boolean(config.pass && config.pass.length > 0),
+    SMTP_PASS_LENGTH: config.pass ? config.pass.length : 0,
+    FROM_EMAIL: config.fromEmail,
+    SESSION_SECRET_CONFIGURED: config.sessionSecretSet,
+  });
+  return config;
+}
+
+export function createTransporterInstance(config: SMTPRuntimeConfig, overridePort?: number, overrideSecure?: boolean): Transporter {
+  const port = overridePort ?? config.port;
+  const secure = overrideSecure ?? config.secure;
+
+  if (config.user && config.pass) {
+    return nodemailer.createTransport({
+      host: config.host,
       port,
       secure,
-      auth: { user, pass },
+      auth: {
+        user: config.user,
+        pass: config.pass,
+      },
+      // Essential timeouts to prevent Replit 30s gateway 502 timeouts
+      connectionTimeout: 12000,
+      greetingTimeout: 8000,
+      socketTimeout: 15000,
       tls: {
         rejectUnauthorized: false,
       },
     });
-    logger.info({ host, port, secure, user }, "SMTP Transporter configured with direct TLS");
-  } else {
-    logger.warn("No SMTP credentials found in environment. Local mock mode.");
-    transporter = nodemailer.createTransport({
-      jsonTransport: true,
-    });
   }
 
-  return transporter;
+  logger.warn("No SMTP credentials found in environment. Local mock mode.");
+  return nodemailer.createTransport({
+    jsonTransport: true,
+  });
+}
+
+export function getTransporter(): Transporter {
+  const config = printSMTPRuntimeConfig();
+  return createTransporterInstance(config);
 }
 
 const getSenderAddress = (): string => {
-  const from = process.env.FROM_EMAIL || process.env.SMTP_USER || OFFICIAL_RECIPIENT_EMAIL;
-  return `"أوفي الذكية - نموذج الموقع" <${from}>`;
+  const config = getSMTPConfig();
+  return `"أوفي الذكية - نموذج الموقع" <${config.fromEmail}>`;
 };
+
+/**
+ * Diagnostic helper to test the SMTP connection live
+ */
+export async function testSMTPConnection(): Promise<{ success: boolean; config: any; error?: any }> {
+  const config = printSMTPRuntimeConfig();
+  if (!config.pass) {
+    return {
+      success: false,
+      config: { ...config, pass: undefined },
+      error: "SMTP_PASS is not configured in process.env",
+    };
+  }
+
+  const transporter = createTransporterInstance(config);
+  try {
+    await transporter.verify();
+    return {
+      success: true,
+      config: { ...config, pass: undefined },
+    };
+  } catch (primaryErr: any) {
+    console.error("[SMTP VERIFY PRIMARY FAILED]", {
+      host: config.host,
+      port: config.port,
+      secure: config.secure,
+      message: primaryErr?.message,
+      code: primaryErr?.code,
+    });
+
+    // If port 465 failed, test port 587 fallback
+    if (config.port === 465) {
+      console.log("[SMTP TEST] Trying port 587 fallback verification...");
+      try {
+        const fallbackTransporter = createTransporterInstance(config, 587, false);
+        await fallbackTransporter.verify();
+        return {
+          success: true,
+          config: { ...config, pass: undefined, note: "Port 465 timed out, but port 587 succeeded!" },
+        };
+      } catch (fallbackErr: any) {
+        return {
+          success: false,
+          config: { ...config, pass: undefined },
+          error: {
+            primaryPort465: { message: primaryErr?.message, code: primaryErr?.code },
+            fallbackPort587: { message: fallbackErr?.message, code: fallbackErr?.code },
+          },
+        };
+      }
+    }
+
+    return {
+      success: false,
+      config: { ...config, pass: undefined },
+      error: { message: primaryErr?.message, code: primaryErr?.code },
+    };
+  }
+}
 
 export async function sendContactFormEmail(data: ContactFormData): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
@@ -150,14 +258,41 @@ export async function sendContactFormEmail(data: ContactFormData): Promise<{ suc
 المرسل إليه الرسمي: ${OFFICIAL_RECIPIENT_EMAIL}
     `;
 
-    const result = await mail.sendMail({
-      from: getSenderAddress(),
-      to: OFFICIAL_RECIPIENT_EMAIL, // STRICT: ALWAYS OFFICIAL_RECIPIENT_EMAIL
-      replyTo: undefined,
-      subject,
-      text: textContent,
-      html: htmlContent,
-    });
+    let result;
+    try {
+      result = await mail.sendMail({
+        from: getSenderAddress(),
+        to: OFFICIAL_RECIPIENT_EMAIL, // STRICT: ALWAYS OFFICIAL_RECIPIENT_EMAIL
+        replyTo: undefined,
+        subject,
+        text: textContent,
+        html: htmlContent,
+      });
+    } catch (primaryErr: any) {
+      console.error("[PRIMARY SEND FAILED - PORT " + (getSMTPConfig().port) + "]", {
+        message: primaryErr?.message,
+        code: primaryErr?.code,
+        command: primaryErr?.command,
+      });
+
+      const config = getSMTPConfig();
+      // If port 465 timed out or connection refused in cloud, automatically attempt port 587 STARTTLS
+      if (config.port === 465 && config.user && config.pass) {
+        console.log("[SMTP FALLBACK] Attempting automatic delivery via port 587 (STARTTLS)...");
+        const fallbackTransporter = createTransporterInstance(config, 587, false);
+        result = await fallbackTransporter.sendMail({
+          from: getSenderAddress(),
+          to: OFFICIAL_RECIPIENT_EMAIL,
+          replyTo: undefined,
+          subject,
+          text: textContent,
+          html: htmlContent,
+        });
+        console.log("[SMTP FALLBACK SUCCESS] Email sent via port 587! ID:", result.messageId);
+      } else {
+        throw primaryErr;
+      }
+    }
 
     logger.info(
       {
@@ -170,9 +305,20 @@ export async function sendContactFormEmail(data: ContactFormData): Promise<{ suc
     );
 
     return { success: true, messageId: result.messageId };
-  } catch (error) {
+  } catch (error: any) {
+    console.error("[SMTP ERROR DETAILS - CONTACT FORM]", {
+      message: error?.message,
+      code: error?.code,
+      command: error?.command,
+      response: error?.response,
+      responseCode: error?.responseCode,
+      stack: error?.stack,
+    });
     logger.error({ error, recipient: OFFICIAL_RECIPIENT_EMAIL }, "Failed to send contact form email");
-    return { success: false, error: (error as Error).message };
+    return {
+      success: false,
+      error: `فشل إرسال البريد (${error?.code || 'SMTP_ERR'}): ${error?.message || 'خطأ غير معروف'}`,
+    };
   }
 }
 
@@ -229,7 +375,7 @@ export async function sendServiceRequestEmail(data: ServiceRequestFormData): Pro
           <td class="field-value" dir="ltr" style="text-align: right;">${data.mobile}</td>
         </tr>
         <tr>
-          <td class="field-label">البريد الإلكتروني للعميل:</td>
+          <td class="field-label">البريد الإلكتروني:</td>
           <td class="field-value" dir="ltr" style="text-align: right;">${data.email}</td>
         </tr>
         <tr>
@@ -242,27 +388,29 @@ export async function sendServiceRequestEmail(data: ServiceRequestFormData): Pro
         </tr>
       </table>
 
-      <div class="section-title">تفاصيل الخدمة المطلوبة</div>
+      <div class="section-title">تفاصيل الطلب والخدمة</div>
       <table class="field-table">
         <tr>
           <td class="field-label">فئة الخدمة:</td>
           <td class="field-value">${data.category || "غير محددة"}</td>
         </tr>
         <tr>
-          <td class="field-label">الخدمة المحددة:</td>
-          <td class="field-value"><strong>${data.service || "غير محددة"}</strong></td>
+          <td class="field-label">الخدمة المطلوبة:</td>
+          <td class="field-value">${data.service || "غير محددة"}</td>
         </tr>
-        ${data.package ? `<tr><td class="field-label">الباقة:</td><td class="field-value">${data.package}</td></tr>` : ""}
-        ${data.documentName ? `<tr><td class="field-label">المستندات الجاهزة:</td><td class="field-value">${data.documentName}</td></tr>` : ""}
+        ${data.package ? `<tr><td class="field-label">الباقة المختارة:</td><td class="field-value">${data.package}</td></tr>` : ""}
+        ${data.documentName ? `<tr><td class="field-label">المستندات المتوفرة:</td><td class="field-value">${data.documentName}</td></tr>` : ""}
+        ${data.sourcePage ? `<tr><td class="field-label">صفحة المصدر:</td><td class="field-value" dir="ltr" style="text-align: right;">${data.sourcePage}</td></tr>` : ""}
         <tr>
-          <td class="field-label">وقت التقديم:</td>
+          <td class="field-label">تاريخ ووقت التقديم:</td>
           <td class="field-value">${timestamp}</td>
         </tr>
-        ${data.sourcePage ? `<tr><td class="field-label">صفحة المصدر:</td><td class="field-value" dir="ltr" style="text-align: right;">${data.sourcePage}</td></tr>` : ""}
       </table>
 
-      <div class="section-title">وصف الطلب والاحتياج</div>
-      <div class="message-box">${data.description}</div>
+      <div style="margin-top: 20px;">
+        <div class="field-label" style="margin-bottom: 8px;">وصف الطلب / المتطلبات:</div>
+        <div class="message-box">${data.description}</div>
+      </div>
     </div>
     <div class="footer">
       تم إرسال هذا الإشعار تلقائياً من خادم موقع أوفي الذكية إلى البريد الرسمي <strong>${OFFICIAL_RECIPIENT_EMAIL}</strong>
@@ -297,14 +445,40 @@ ${data.description}
 المرسل إليه الرسمي: ${OFFICIAL_RECIPIENT_EMAIL}
     `;
 
-    const result = await mail.sendMail({
-      from: getSenderAddress(),
-      to: OFFICIAL_RECIPIENT_EMAIL, // STRICT: ALWAYS OFFICIAL_RECIPIENT_EMAIL
-      replyTo: data.email, // Convenient reply-to pointing to the inquiring client
-      subject,
-      text: textContent,
-      html: htmlContent,
-    });
+    let result;
+    try {
+      result = await mail.sendMail({
+        from: getSenderAddress(),
+        to: OFFICIAL_RECIPIENT_EMAIL, // STRICT: ALWAYS OFFICIAL_RECIPIENT_EMAIL
+        replyTo: data.email, // Convenient reply-to pointing to the inquiring client
+        subject,
+        text: textContent,
+        html: htmlContent,
+      });
+    } catch (primaryErr: any) {
+      console.error("[PRIMARY SEND FAILED (SERVICE REQ) - PORT " + (getSMTPConfig().port) + "]", {
+        message: primaryErr?.message,
+        code: primaryErr?.code,
+        command: primaryErr?.command,
+      });
+
+      const config = getSMTPConfig();
+      if (config.port === 465 && config.user && config.pass) {
+        console.log("[SMTP FALLBACK] Attempting delivery via port 587 (STARTTLS)...");
+        const fallbackTransporter = createTransporterInstance(config, 587, false);
+        result = await fallbackTransporter.sendMail({
+          from: getSenderAddress(),
+          to: OFFICIAL_RECIPIENT_EMAIL,
+          replyTo: data.email,
+          subject,
+          text: textContent,
+          html: htmlContent,
+        });
+        console.log("[SMTP FALLBACK SUCCESS] Email sent via port 587! ID:", result.messageId);
+      } else {
+        throw primaryErr;
+      }
+    }
 
     logger.info(
       {
@@ -317,8 +491,19 @@ ${data.description}
     );
 
     return { success: true, messageId: result.messageId };
-  } catch (error) {
+  } catch (error: any) {
+    console.error("[SMTP ERROR DETAILS - SERVICE REQUEST]", {
+      message: error?.message,
+      code: error?.code,
+      command: error?.command,
+      response: error?.response,
+      responseCode: error?.responseCode,
+      stack: error?.stack,
+    });
     logger.error({ error, recipient: OFFICIAL_RECIPIENT_EMAIL }, "Failed to send service request email");
-    return { success: false, error: (error as Error).message };
+    return {
+      success: false,
+      error: `فشل إرسال البريد (${error?.code || 'SMTP_ERR'}): ${error?.message || 'خطأ غير معروف'}`,
+    };
   }
 }
