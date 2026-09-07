@@ -34,7 +34,22 @@ app.get("/", (_req, res) => {
   res.json({ status: "ok", name: "OV Office API Server" });
 });
 
+app.get("/api/healthz", (_req, res) => {
+  res.json({ status: "ok" });
+});
+
+app.use("/api", (req, _res, next) => {
+  console.log(`[API-SERVER] ${req.method} ${req.url}`);
+  next();
+});
+
 app.use("/api", router);
+
+// Global error handler
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  logger.error({ err }, "Unhandled error in API server");
+  res.status(500).json({ success: false, error: err?.message || "Internal server error" });
+});
 
 export default app;
 

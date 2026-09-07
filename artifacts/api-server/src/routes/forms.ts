@@ -51,7 +51,7 @@ function isHoneypotTriggered(body: any): boolean {
 }
 
 // POST /api/forms/contact
-router.post("/contact", formRateLimiter, async (req: Request, res: Response) => {
+router.post("/contact", async (req: Request, res: Response) => {
   // Honeypot trap check
   if (isHoneypotTriggered(req.body)) {
     logger.warn({ ip: req.ip }, "Honeypot triggered on contact form submission. Dropping silently.");
@@ -100,7 +100,7 @@ router.post("/contact", formRateLimiter, async (req: Request, res: Response) => 
 });
 
 // POST /api/forms/service-request
-router.post("/service-request", formRateLimiter, async (req: Request, res: Response) => {
+router.post("/service-request", async (req: Request, res: Response) => {
   // Honeypot trap check
   if (isHoneypotTriggered(req.body)) {
     logger.warn({ ip: req.ip }, "Honeypot triggered on service request submission. Dropping silently.");
