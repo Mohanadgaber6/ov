@@ -32,12 +32,11 @@ app.use(express.urlencoded({ extended: true }));
 
 import { testSMTPConnection, printSMTPRuntimeConfig } from "./lib/mailer";
 
+import path from "node:path";
+import fs from "node:fs";
+
 // Print runtime config at startup
 printSMTPRuntimeConfig();
-
-app.get("/", (_req, res) => {
-  res.json({ status: "ok", name: "OV Office API Server" });
-});
 
 app.get("/api/healthz", (_req, res) => {
   res.json({ status: "ok" });
@@ -59,6 +58,20 @@ app.use("/api", (req, _res, next) => {
 });
 
 app.use("/api", router);
+
+// Serve built static frontend files and SPA fallback
+const staticDir = path.resolve(import.meta.dirname, "../../ov-office-site/dist/public");
+if (fs.existsSync(staticDir)) {
+  app.use(express.static(staticDir));
+  app.get("*", (req, res, next) => {
+    if (req.url.startsWith("/api")) return next();
+    res.sendFile(path.join(staticDir, "index.html"));
+  });
+} else {
+  app.get("/", (_req, res) => {
+    res.json({ status: "ok", name: "OV Office API Server" });
+  });
+}
 
 // Global error handler
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
