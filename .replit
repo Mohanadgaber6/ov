@@ -3,7 +3,7 @@ modules = ["nodejs-24", "python-base-3.13", "postgresql-16"]
 run = "pnpm run dev"
 
 [[ports]]
-localPort = 3000
+localPort = 5173
 externalPort = 80
 
 [deployment]
