@@ -1,24 +1,24 @@
-import express, { type Express } from "express";
+import express from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 
-const app: Express = express();
+const app: any = express();
 app.set("trust proxy", 1);
 
 app.use(
   pinoHttp({
     logger,
     serializers: {
-      req(req) {
+      req(req: any) {
         return {
           id: req.id,
           method: req.method,
           url: req.url?.split("?")[0],
         };
       },
-      res(res) {
+      res(res: any) {
         return {
           statusCode: res.statusCode,
         };
@@ -38,12 +38,12 @@ import fs from "node:fs";
 // Print runtime config at startup
 printSMTPRuntimeConfig();
 
-app.get("/api/healthz", (_req, res) => {
+app.get("/api/healthz", (_req: any, res: any) => {
   res.json({ status: "ok" });
 });
 
 // Diagnostic endpoint to test SMTP live
-app.get("/api/smtp-test", async (_req, res) => {
+app.get("/api/smtp-test", async (_req: any, res: any) => {
   try {
     const result = await testSMTPConnection();
     res.status(result.success ? 200 : 500).json(result);
@@ -52,7 +52,7 @@ app.get("/api/smtp-test", async (_req, res) => {
   }
 });
 
-app.use("/api", (req, _res, next) => {
+app.use("/api", (req: any, _res: any, next: any) => {
   console.log(`[API-SERVER] ${req.method} ${req.url}`);
   next();
 });
@@ -63,18 +63,18 @@ app.use("/api", router);
 const staticDir = path.resolve(import.meta.dirname, "../../ov-office-site/dist/public");
 if (fs.existsSync(staticDir)) {
   app.use(express.static(staticDir));
-  app.get("*", (req, res, next) => {
+  app.get("*", (req: any, res: any, next: any) => {
     if (req.url.startsWith("/api")) return next();
     res.sendFile(path.join(staticDir, "index.html"));
   });
 } else {
-  app.get("/", (_req, res) => {
+  app.get("/", (_req: any, res: any) => {
     res.json({ status: "ok", name: "OV Office API Server" });
   });
 }
 
 // Global error handler
-app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+app.use((err: any, _req: any, res: any, _next: any) => {
   logger.error({ err }, "Unhandled error in API server");
   res.status(500).json({ success: false, error: err?.message || "Internal server error" });
 });
