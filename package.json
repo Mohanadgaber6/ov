@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "license": "MIT",
   "scripts": {
-    "dev": "pnpm --filter @workspace/ov-office-site run dev",
+    "dev": "pnpm --parallel --filter @workspace/ov-office-site --filter @workspace/api-server run dev",
     "dev:site": "pnpm --filter @workspace/ov-office-site run dev",
     "dev:api": "pnpm --filter @workspace/api-server run dev",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",

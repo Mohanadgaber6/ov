@@ -1,10 +1,12 @@
 modules = ["nodejs-24", "python-base-3.13", "postgresql-16"]
 
+run = "pnpm run dev"
+
 [deployment]
 router = "application"
 deploymentTarget = "autoscale"
 build = ["pnpm", "run", "build"]
-run = ["pnpm", "--filter", "@workspace/ov-office-site", "run", "serve"]
+run = ["pnpm", "run", "dev"]
 
 [deployment.postBuild]
 args = ["pnpm", "store", "prune"]
