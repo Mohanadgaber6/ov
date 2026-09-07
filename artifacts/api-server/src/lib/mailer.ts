@@ -38,37 +38,25 @@ let transporter: Transporter | null = null;
 export function getTransporter(): Transporter {
   if (transporter) return transporter;
 
-  const host = process.env.SMTP_HOST;
-  const port = Number(process.env.SMTP_PORT) || 587;
-  const user = process.env.SMTP_USER;
+  const host = process.env.SMTP_HOST || "smtp.gmail.com";
+  const port = Number(process.env.SMTP_PORT) || 465;
+  const user = process.env.SMTP_USER || "ovoffiice@gmail.com";
   const pass = process.env.SMTP_PASS;
   const secure = process.env.SMTP_SECURE === "true" || port === 465;
 
-  if ((host && user && pass) || (user && pass)) {
-    if (host === "smtp.gmail.com" || user?.endsWith("@gmail.com")) {
-      transporter = nodemailer.createTransport({
-        service: "gmail",
-        auth: { user, pass },
-        tls: {
-          rejectUnauthorized: false,
-        },
-      });
-      logger.info({ user, provider: "gmail" }, "SMTP Transporter configured with Gmail service");
-    } else {
-      transporter = nodemailer.createTransport({
-        host,
-        port,
-        secure,
-        auth: { user, pass },
-        tls: {
-          rejectUnauthorized: false,
-        },
-      });
-      logger.info({ host, port, secure }, "SMTP Transporter configured with custom SMTP provider");
-    }
+  if (user && pass) {
+    transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: { user, pass },
+      tls: {
+        rejectUnauthorized: false,
+      },
+    });
+    logger.info({ host, port, secure, user }, "SMTP Transporter configured with direct TLS");
   } else {
-    // If SMTP credentials are not provided, we log a prominent warning and use JSON/stream mock for safe local operation
-    logger.warn("No SMTP credentials (SMTP_HOST, SMTP_USER, SMTP_PASS) found in environment. Emails will be logged locally.");
+    logger.warn("No SMTP credentials found in environment. Local mock mode.");
     transporter = nodemailer.createTransport({
       jsonTransport: true,
     });
