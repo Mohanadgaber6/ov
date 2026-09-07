@@ -94,9 +94,9 @@ export function createTransporterInstance(config: SMTPRuntimeConfig, overridePor
         pass: config.pass,
       },
       // Essential timeouts to prevent Replit 30s gateway 502 timeouts
-      connectionTimeout: 12000,
-      greetingTimeout: 8000,
-      socketTimeout: 15000,
+      connectionTimeout: 5000,
+      greetingTimeout: 4000,
+      socketTimeout: 8000,
       tls: {
         rejectUnauthorized: false,
       },
