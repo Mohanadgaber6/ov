@@ -14,9 +14,82 @@ if (Number.isNaN(port) || port <= 0) {
 
 const basePath = process.env.BASE_PATH || '/';
 
+function apiForwarderPlugin(): Plugin {
+  return {
+    name: 'api-forwarder',
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        if (!req.url || (!req.url.startsWith('/api/') && req.url !== '/api')) {
+          return next();
+        }
+
+        const apiPort = process.env.API_PORT || '3000';
+        const targets = [
+          `http://127.0.0.1:${apiPort}`,
+          `http://localhost:${apiPort}`,
+        ];
+
+        let bodyBuffer: Buffer | undefined;
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+          const chunks: Buffer[] = [];
+          for await (const chunk of req) {
+            chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+          }
+          bodyBuffer = Buffer.concat(chunks);
+        }
+
+        const headers: Record<string, string> = {};
+        for (const [k, v] of Object.entries(req.headers)) {
+          if (v && k !== 'host' && k !== 'content-length') {
+            headers[k] = Array.isArray(v) ? v.join(', ') : v;
+          }
+        }
+        if (bodyBuffer) {
+          headers['content-length'] = String(bodyBuffer.length);
+        }
+
+        let lastError: any = null;
+        for (const targetBase of targets) {
+          const targetUrl = `${targetBase}${req.url}`;
+          try {
+            console.log(`[Vite -> API Forward] ${req.method} ${targetUrl}`);
+            const response = await fetch(targetUrl, {
+              method: req.method,
+              headers,
+              body: bodyBuffer,
+              duplex: bodyBuffer ? 'half' : undefined,
+            } as any);
+
+            res.statusCode = response.status;
+            response.headers.forEach((val, key) => {
+              res.setHeader(key, val);
+            });
+
+            const resData = Buffer.from(await response.arrayBuffer());
+            res.end(resData);
+            return;
+          } catch (err: any) {
+            lastError = err;
+            console.warn(`[Vite Forward Fail] ${targetUrl}: ${err.message}`);
+          }
+        }
+
+        console.error('[Vite Forward All Failed]', lastError);
+        res.statusCode = 502;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({
+          success: false,
+          error: `API Server Unreachable: ${lastError?.message || 'Connection failed'}`,
+        }));
+      });
+    },
+  };
+}
+
 export default defineConfig({
   base: basePath,
   plugins: [
+    apiForwarderPlugin(),
     react(),
     tailwindcss(),
     runtimeErrorOverlay(),
@@ -56,22 +129,6 @@ export default defineConfig({
     strictPort: true,
     host: '0.0.0.0',
     allowedHosts: true,
-    proxy: {
-      '/api': {
-        target: 'http://127.0.0.1:3000',
-        changeOrigin: true,
-        secure: false,
-        configure: (proxy) => {
-          proxy.on('error', (err, req, res) => {
-            console.error('[Vite Proxy Error]', req.method, req.url, '-->', err.message);
-            if ('writeHead' in res && !res.headersSent) {
-              res.writeHead(502, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ success: false, error: `فشل الاتصال بسيرفر النماذج (كود: ${err.message})` }));
-            }
-          });
-        },
-      },
-    },
     fs: {
       strict: true,
     },
