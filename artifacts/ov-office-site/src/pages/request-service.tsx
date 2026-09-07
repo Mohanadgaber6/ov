@@ -164,7 +164,7 @@ export default function RequestServicePage() {
 
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || 'حدث خطأ أثناء إرسال الطلب');
+        throw new Error(errorData.error || `حدث خطأ أثناء إرسال الطلب (${res.status})`);
       }
 
       trackEvent('service_form_submit', {

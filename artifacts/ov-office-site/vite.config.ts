@@ -58,8 +58,18 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       '/api': {
-        target: process.env.API_URL || 'http://127.0.0.1:3000',
+        target: 'http://127.0.0.1:3000',
         changeOrigin: true,
+        secure: false,
+        configure: (proxy) => {
+          proxy.on('error', (err, req, res) => {
+            console.error('[Vite Proxy Error]', req.method, req.url, '-->', err.message);
+            if ('writeHead' in res && !res.headersSent) {
+              res.writeHead(502, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: false, error: `فشل الاتصال بسيرفر النماذج (كود: ${err.message})` }));
+            }
+          });
+        },
       },
     },
     fs: {

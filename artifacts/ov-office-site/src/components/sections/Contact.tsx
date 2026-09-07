@@ -72,6 +72,12 @@ export function Contact({ compact = false }: { compact?: boolean }) {
     const messageContent = String(formData.get('message') ?? '');
     const hp = String(formData.get('website_hp') ?? '');
 
+    if (phone.trim().length < 7) {
+      setSubmitError('يرجى إدخال رقم جوال صحيح لا يقل عن 7 أرقام (مثال: 0501234567)');
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
       // Server-side email delivery
       const res = await fetch('/api/forms/contact', {
@@ -89,7 +95,7 @@ export function Contact({ compact = false }: { compact?: boolean }) {
 
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || 'حدث خطأ أثناء إرسال الطلب');
+        throw new Error(errorData.error || `حدث خطأ أثناء إرسال الطلب (${res.status})`);
       }
 
       trackEvent('service_form_submit', { source_page: 'public-contact-form' });
