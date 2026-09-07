@@ -63,7 +63,8 @@ app.use("/api", router);
 const staticDir = path.resolve(import.meta.dirname, "../../ov-office-site/dist/public");
 if (fs.existsSync(staticDir)) {
   app.use(express.static(staticDir));
-  app.get("*", (req: any, res: any, next: any) => {
+  app.use((req: any, res: any, next: any) => {
+    if (req.method !== "GET" && req.method !== "HEAD") return next();
     if (req.url.startsWith("/api")) return next();
     res.sendFile(path.join(staticDir, "index.html"));
   });
