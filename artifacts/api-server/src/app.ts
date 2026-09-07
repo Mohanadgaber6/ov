@@ -36,7 +36,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/api", router);
 
 // Reverse proxy: forward all non-API requests to the Vite dev server
-const VITE_PORT = Number(process.env.VITE_PORT) || 5173;
+const VITE_PORT = Number(process.env.VITE_PORT) || 5174;
 
 app.use((req, res) => {
   const proxyReq = http.request(

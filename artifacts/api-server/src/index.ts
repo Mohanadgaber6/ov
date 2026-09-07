@@ -2,7 +2,7 @@ import "dotenv/config";
 import app from "./app";
 import { logger } from "./lib/logger";
 
-const rawPort = process.env["API_PORT"] || "3000";
+const rawPort = process.env["PORT"] || process.env["API_PORT"] || "3000";
 
 const port = Number(rawPort);
 
