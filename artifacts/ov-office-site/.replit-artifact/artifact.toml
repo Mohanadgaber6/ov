@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "OV Office Arabic Website"
+description = "A premium Arabic-first public website for OV Office, a Saudi business services company helping investors and businesses navigate formation, government platforms, and operational services."
+version = "1.0.0"
+id = "artifacts/ov-office-site"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 20960
+
+[services.development]
+run = "pnpm --filter @workspace/ov-office-site run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/ov-office-site", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/ov-office-site/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20960"
+BASE_PATH = "/"
